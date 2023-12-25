@@ -7,6 +7,22 @@ import re
 import json
 import urllib2
 
+# =========================================>>> 用途描述 <<<=========================================
+SCRIPT_DOCS = """
+这个脚本用来检查sentinel迁移完成之后，sentinel当前集群状态是否正常，主要检查如下项目：
+    1、所有的sentinel节点是否正确运行（是否可以ping通）
+    2、所有的sentinel节点是否处于tilt模式，如果进入tilt模式，则认为sentinel状态不正常
+    3、随机挑选100个shard，检查其master字典中sentinel标志的数量是否为 SENTINEL_NUM_CORRECT = 3
+    4、随机挑选100个shard，检查其sentinel字典中迁移的sentinel节点的flags标志是否为 OK_FLAGS = 'sentinel'
+    5、随机挑选100个shard，检查其sentinel字典中迁移的sentinel节点的 last_ok_pint_reply 时间是否小于 MAX_LAST_OK_PING_REPLY = 2000
+    6、随机挑选100个shard，检查其sentinel字典中迁移的sentinel节点的 last_hello_message 时间是否小于 MAX_LAST_HELLO_MESSAGE = 4000
+脚本命令格式：
+    python check_sentinel.py -t <sentinel_ip>
+    其中sentinel_ip就是迁移的sentinel节点
+"""
+# =========================================>>> 用途描述 <<<=========================================
+
+
 # =========================================>>> 常量定义 <<<=========================================
 
 # 如果当前sentinel认为待检测的目标sentinel节点是一个sentinel，并且状态正常，则master的sentinels字典中的flags的值为 sentinel
@@ -26,6 +42,8 @@ SQL_T_QUERY_SENTINEL_CLUSTER = "SELECT GROUP_CONCAT(ip) FROM domain_and_ip WHERE
 MODE = 'normal'
 # 正确的sentinel数量
 SENTINEL_NUM_CORRECT = 3
+# 0 表示退出tilt模式；1 表示进入tilt模式
+TILT_MODE = '0'
 
 # =========================================>>> 常量定义 <<<=========================================
 
@@ -86,7 +104,12 @@ def get_target_shard(all_shard_line):
     for line in all_shard_line:
         if line.find('sentinel_masters') != -1:
             master_num = line.split(':')[1]
-            print('The number of masters in observer sentinel before filtering is: {}'.format(master_num))
+            print(' OK: The number of masters in observer sentinel before filtering is: {}'.format(master_num))
+        if line.find('sentinel_tilt') != -1:
+            tilt_mode = line.split(':')[1]
+            if str(tilt_mode).strip() != TILT_MODE:
+                print('ERR: observer sentinel is currently in tilt mode, exit script!!! {}'.format(line))
+                sys.exit(0)
         if line.find('master') == -1:
             continue
         if line.find('status=ok') == -1:
@@ -103,7 +126,7 @@ def get_target_shard(all_shard_line):
     if len(target_shard_tmp) >= 100:
         # 实例数在10选1之后依旧大于100，则截断
         target_shard_tmp = target_shard_tmp[:100]
-    print('The number of masters in observer sentinel after  filtering is: {}'.format(len(target_shard_tmp)))
+    print(' OK: The number of masters in observer sentinel after  filtering is: {}'.format(len(target_shard_tmp)))
     return target_shard_tmp
 
 
@@ -248,13 +271,13 @@ def cmd_args():
                                              "the script will use a more lenient way to check, such as do not ping the "
                                              "sentinel node")
     args = parser.parse_args()
-    print('cmd args: {}'.format(args))
+    print(' OK: cmd args: {}'.format(args))
 
     # 获取参数中的运行模式
     global MODE
     if args.mode is not None:
         MODE = args.mode.strip().lower()
-    print('script run mode is {}'.format(MODE))
+    print(' OK: script run mode is {}'.format(MODE))
 
     if args.observer is None:
         # 如果命令行没有指定观察者sentinel，则尝试远程获取
@@ -293,7 +316,7 @@ def try_get_observer(target_sentinel):
     :param target_sentinel: 要检查的目标sentinel。
     :return: 观察者 sentinel ip
     """
-    print('try get observer sentinel from remote...')
+    print(' OK: try get observer sentinel from remote...')
     # 从远端获取sentinel信息
     url = 'http://snrsadmin.cnsuning.com/snrs/sql/safe'
     headers = {'Content-Type': 'application/json'}
@@ -311,7 +334,7 @@ def try_get_observer(target_sentinel):
         print('ERR: get observer sentinel cluster fail, sentinel cluster is None')
         sys.exit(0)
     ip_list = ip_list.split(',')  # 这个不区分类型可太牛逼了
-    print('remote sentinel cluster: {}'.format(ip_list))
+    print(' OK: remote sentinel cluster: {}'.format(ip_list))
 
     # 尝试去ping一下所有的sentinel节点，至少能ping通，否则后面的检查没有意义
     if MODE == 'normal':
@@ -328,7 +351,7 @@ def try_get_observer(target_sentinel):
     observer_sentinel = ip_list[0]
     if not ip_ok(observer_sentinel):
         print('ERR: observer sentinel ip from remote is illegal: {}'.format(observer_sentinel))
-    print('observer sentinel from remote is {}'.format(observer_sentinel))
+    print(' OK: observer sentinel from remote is {}'.format(observer_sentinel))
     return observer_sentinel
 
 
@@ -339,7 +362,7 @@ def ping_sentinels(sentinel_ips):
     :return:
     """
     for ip in sentinel_ips:
-        print('try send a ping to sentinel: {} ...'.format(ip))
+        print(' OK: try send a ping to sentinel: {} ...'.format(ip))
         CMD_T_PING[2] = ip
         code, msg, data = execute_cmd(CMD_T_PING)
         if code != 0:
@@ -349,7 +372,7 @@ def ping_sentinels(sentinel_ips):
         if data.strip().lower() != 'pong':
             print('ERR: ping sentinel {} fail, exit script'.format(ip))
             sys.exit(0)
-        print('ping {} successfully!'.format(ip))
+        print(' OK: ping {} successfully!'.format(ip))
 
 
 def ip_ok(ip_addr):

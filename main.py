@@ -1,18 +1,13 @@
 # 这是一个示例 Python 脚本。
 
-import requests
-import json
+import pandas as pd
+import numpy as np
 
-url = "http://snrsadmin.cnsuning.com/snrs/sql/safe"
+# 创建一个 DataFrame
+master1158 = {'name': 'RRP_SIT_1', 'status': 'odown', 'address': '10.237.170.61:6379', 'slaves': 0, 'sentinels': 3}
+master1170 = {'name': 'PS_master_1', 'status': 'sdown', 'address': '10.37.64.166:6379', 'slaves': 0, 'sentinels': 1}
+master1178 = {'name': 'OSMOS_SIT_2', 'status': 'odown', 'address': '10.237.36.125:6379', 'slaves': 0, 'sentinels': 3}
+dict_data = [master1158, master1170, master1178]
 
-payload = json.dumps({
-  "secretKey": "KiEyYYMdIhseLsMXbAhCmFHMjLwQqXrXRSrQfhsmZiHCKluxwZpPYuMHtJQjTZpp",
-  "data": "select * from  snrs_config_items where config_type='SnrsMetaDataChecker' and config_name_en='switch';"
-})
-headers = {
-  'Content-Type': 'application/json'
-}
-
-response = requests.request("POST", url, headers=headers, data=payload)
-
-print(response.text)
+data = pd.DataFrame(dict_data, index=['name', 'status', 'address', 'slaves'])
+print(data)
