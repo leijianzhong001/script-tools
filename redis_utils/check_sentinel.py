@@ -9,16 +9,17 @@ import urllib2
 
 # =========================================>>> 用途描述 <<<=========================================
 SCRIPT_DOCS = """
-这个脚本用来检查sentinel迁移完成之后，sentinel当前集群状态是否正常，主要检查如下项目：
-    1、所有的sentinel节点是否正确运行（是否可以ping通）
-    2、所有的sentinel节点是否处于tilt模式，如果进入tilt模式，则认为sentinel状态不正常
-    3、随机挑选100个shard，检查其master字典中sentinel标志的数量是否为 SENTINEL_NUM_CORRECT = 3
-    4、随机挑选100个shard，检查其sentinel字典中迁移的sentinel节点的flags标志是否为 OK_FLAGS = 'sentinel'
-    5、随机挑选100个shard，检查其sentinel字典中迁移的sentinel节点的 last_ok_pint_reply 时间是否小于 MAX_LAST_OK_PING_REPLY = 2000
-    6、随机挑选100个shard，检查其sentinel字典中迁移的sentinel节点的 last_hello_message 时间是否小于 MAX_LAST_HELLO_MESSAGE = 4000
-脚本命令格式：
-    python check_sentinel.py -t <sentinel_ip>
-    其中sentinel_ip就是迁移的sentinel节点
+--> This script is used to check whether the current cluster status of sentinel is normal after the migration of sentinel is completed. It mainly checks the following items: 
+        1.Whether all sentinel nodes operate correctly (whether they can be pinged) 
+		2.Check whether all sentinel nodes are in tilt mode(). If they are in tilt mode, the sentinel state is abnormal. 
+		3.Randomly select 100 shards, and check whether the number of sentinel flags in their master dictionaries is SENTINEL_NUM_CORRECT(3). 
+		4.Randomly select 100 shards and check whether the flags flag of the migrated sentinel node in its sentinel dictionary is OK_FLAGS(sentinel). 
+		5.Randomly select 100 shards, and check whether the last_ok_pint_reply time of the migrated sentinel node in its sentinel dictionary is less than MAX_LAST_OK_PING_REPLY(2000). 
+		6.Randomly select 100 shards, and check whether the last_hello_message time of the migrated sentinel node in its sentinel dictionary is less than the MAX_LAST_HELLO_MESSAGE(4000). 
+--> Script command format: 
+        python check_sentinel.py -t <sentinel_ip> 
+--> Notes: 
+        Where the sentinel_ip is the sentinel node that is migrated
 """
 # =========================================>>> 用途描述 <<<=========================================
 
@@ -45,6 +46,7 @@ SENTINEL_NUM_CORRECT = 3
 # 0 表示退出tilt模式；1 表示进入tilt模式
 TILT_MODE = '0'
 
+
 # =========================================>>> 常量定义 <<<=========================================
 
 
@@ -53,6 +55,7 @@ class MasterInfo:
     info sentinel 返回的条目，格式如下：
     master0:name=CPS_SIT_1,status=ok,address=10.243.147.126:6379,slaves=1,sentinels=3
     """
+
     def __init__(self):
         self.master_idx = None
         self.name = None
@@ -264,7 +267,7 @@ def cmd_args():
     接收命令行参数
     :return:
     """
-    parser = argparse.ArgumentParser(description="check sentinel")  # 使用argparse的构造函数来创建对象
+    parser = argparse.ArgumentParser(description=SCRIPT_DOCS)  # 使用argparse的构造函数来创建对象
     parser.add_argument("-o", "--observer", help="observer sentinel ip")  # 添加可解析的参数
     parser.add_argument("-t", "--target", help="target sentinel ip todo check", required=True)
     parser.add_argument("-m", "--mode", help="script run mode, normal or test, When the value is test, "
