@@ -14,12 +14,26 @@ from openpyxl.styles import PatternFill, GradientFill
 from openpyxl.styles import Font
 from openpyxl.styles import Border, Side
 
-COOKIE_STR = 'experimentation_subject_id=IjFjYjNlNTYzLWRiZTAtNDM3ZC05MzFlLTk4OGY3MjZkYmI1MSI%3D--642f87fac21ad96137b0ca2b46f781df1d1781bf; tradeMA=68; _snvd=1702028146357WryCRiG+g6C; idsLoginUserIdLastTime=20013921; isso_ld=true; isso_us=20013921; authId=siCA726D56F2D41562D02F8BA81A3AF3F1; secureToken=B23604D83A0200059C3CEDE2769F9019; JSESSIONID=82lxflvdbvfq27ugozcp0jv'
+COOKIE_STR = 'experimentation_subject_id=IjFjYjNlNTYzLWRiZTAtNDM3ZC05MzFlLTk4OGY3MjZkYmI1MSI%3D--642f87fac21ad96137b0ca2b46f781df1d1781bf; tradeMA=68; _snvd=1702028146357WryCRiG+g6C; idsLoginUserIdLastTime=20013921; isso_ld=true; isso_us=20013921; _snsr=direct%7Cdirect%7C%7C%7C; _snma=1%7C170702760811448759%7C1707027608114%7C1707028405030%7C1708158908824%7C3%7C2; secureToken=B2BA837B01E5D6391A4A0DB46F6D2D93; JSESSIONID=tb3btytw8w6m1wc3qo66hdu9c; authId=si8B50722899FF172716402A45269DF417'
 URL_GET_TASK_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getTaskInfoByKind'
-RUL_GET_TPS_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getTpsInfo'
+URL_GET_TPS_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getTpsInfo'
+URL_GET_CONFIG_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getConfigInfo'
+# -INC-  -SINK-
 LINK_TYPE = "-INC-"
 PAGE_SIZE = 100
 EXCEL_FILE = 'D:\\file\\202402\\rdrs_links.xlsx'
+# 用于存储标记变化的函数
+func_change_markers = []
+
+
+def change_markers(func):
+    """
+    定义一个change_markers装饰器，用于装饰标记变化的函数
+    :param func:
+    :return:
+    """
+    func_change_markers.append(func)
+    return func
 
 
 def cookie_to_dict():
@@ -80,7 +94,7 @@ def get_tps_info_0(link_info):
     :return:
     """
     param = {'taskName': link_info.get('taskName')}
-    response = requests.get(RUL_GET_TPS_INFO, cookies=cookies, headers=headers, params=param)
+    response = requests.get(URL_GET_TPS_INFO, cookies=cookies, headers=headers, params=param)
     if response.status_code != 200:
         link_info['haveData'] = True
         link_info['tps'] = str(['9999' for _ in range(15)])
@@ -99,6 +113,28 @@ def get_tps_info_0(link_info):
     link_info['tps'] = str(tps)
 
 
+def get_config_info_0(link_info):
+    """
+    获取链路的配置信息
+    :param link_info: 链路信息
+    :return:
+    """
+    param = {'taskName': link_info.get('taskName')}
+    response = requests.get(URL_GET_CONFIG_INFO, cookies=cookies, headers=headers, params=param)
+    if response.status_code != 200:
+        link_info['bkIp'] = 'NA'
+        return
+    response_dict = response.json()
+    endpoint_code = response_dict.get('code')
+    if str(endpoint_code) != '200':
+        link_info['bkIp'] = 'NA'
+        return
+
+    # 只取最近15分钟这一项
+    database_hostname = response_dict.get('result').get('database.hostname')
+    link_info['bkIp'] = database_hostname
+
+
 def set_tps_info(link_list):
     """
     获取链路对应的tps信息
@@ -106,7 +142,21 @@ def set_tps_info(link_list):
     :return:
     """
     executor = ThreadPoolExecutor(max_workers=5)
+    # map方法会将link_list中的每个元素传递给get_tps_info_0函数
     executor.map(get_tps_info_0, link_list)
+    # 这里等待所有任务执行完毕再返回这个函数
+    executor.shutdown()
+
+
+def set_config_info(link_list):
+    """
+    获取链路对应的tps信息
+    :param link_list: 链路列表
+    :return:
+    """
+    executor = ThreadPoolExecutor(max_workers=5)
+    # map方法会将link_list中的每个元素传递给get_tps_info_0函数
+    executor.map(get_config_info_0, link_list)
     # 这里等待所有任务执行完毕再返回这个函数
     executor.shutdown()
 
@@ -133,7 +183,10 @@ def get_link_list():
         if page_data is None:
             continue
         page_link_list = page_data[0]
+        # 设置链路的tps信息
         set_tps_info(page_link_list)
+        # 设置链路的配置信息
+        set_config_info(page_link_list)
         link_list.extend(page_link_list)
         print('当前页号: {} 数据获取完成'.format(page_no))
     print('所有页数据获取完成！')
@@ -172,7 +225,8 @@ def my_sheet_name_filter(sheet_names):
     if sheet_names is None or len(sheet_names) == 0:
         return []
     my_sheet_names = [sheet_name.strip() for sheet_name in sheet_names if is_my_sheet_name(sheet_name)]
-    my_sheet_names.sort()
+    # 将 my_sheet_names 列表按照元素结尾的数字排序
+    my_sheet_names.sort(key=lambda x: int(x.split('-')[-1]))
     return my_sheet_names
 
 
@@ -192,14 +246,14 @@ def write_link_list(link_list):
     if my_sheet_names is None:
         raise Exception("没有符合指定模式的sheet页，请检查")
     if len(my_sheet_names) != 0:
-        max_no = max(my_sheet_names).split('-')[-1]
-    max_no = int(max_no) + 1
+        max_no = max([int(my_sheet_names.split('-')[-1]) for my_sheet_names in my_sheet_names])
+    max_no = max_no + 1
     sheet_name = "{}-{}".format(ftime('_'), max_no)
     ws = wb.create_sheet(sheet_name)
     print('创建sheet页: {}'.format(sheet_name))
 
     header = ['taskId', 'taskName', 'taskStatus', 'systemName', 'clusterName', 'workIp', 'startTime', 'maxBinlogFile',
-              'nowBinlogFile', 'minBinlogFile', 'nowPosition', 'trace', 'delay', 'delayOfnum', 'haveData', 'tps']
+              'nowBinlogFile', 'minBinlogFile', 'nowPosition', 'trace', 'delay', 'delayOfnum', 'haveData', 'tps', 'bkIp']
     ws.append(header)
     for link_dict in link_list:
         row = [link_dict.get(key) for key in header]
@@ -238,12 +292,15 @@ def construct_task_map_row(wb):
     last_one, last_two = get_last_two_sheet(wb)
     global last_one_task_map_row
     # 字典推导构建任务号到行的索引，任务号作为key，行作为value，这样就可以通过任务号快速定位到行。排除空行
-    last_one_task_map_row = {str(row[0].value).strip(): row for row in last_one.rows if row[0].value is not None and len(str(row[0].value).strip()) != 0}
+    last_one_task_map_row = {str(row[0].value).strip(): row for row in last_one.rows if
+                             row[0].value is not None and len(str(row[0].value).strip()) != 0}
     global last_two_task_map_row
     # 字典推导构建任务号到行的索引，任务号作为key，行作为value，这样就可以通过任务号快速定位到行。排除空行
-    last_two_task_map_row = {str(row[0].value).strip(): row for row in last_two.rows if row[0].value is not None and len(str(row[0].value).strip()) != 0}
+    last_two_task_map_row = {str(row[0].value).strip(): row for row in last_two.rows if
+                             row[0].value is not None and len(str(row[0].value).strip()) != 0}
 
 
+@change_markers
 def status_change_marker(last_one, last_two):
     """
     在最后一个sheet页中标记状态变化，有变化的链路标记为 EBE766 黄色
@@ -280,6 +337,7 @@ def status_change_marker(last_one, last_two):
             cell.fill = fill
 
 
+@change_markers
 def link_num_change_marker(last_one, last_two):
     """
     在最后一个sheet页中标记链路数量的变化，多出来的链路标记为灰绿色 80B492 ，少了的链路追加到sheet页最后，标记为红色 E0324C
@@ -292,9 +350,11 @@ def link_num_change_marker(last_one, last_two):
     # 少了的链路标记为红色，并追加到sheet页最后
     fill_decreased = PatternFill(start_color='E0324C', end_color='E0324C', fill_type='solid')
     # 获取倒数第一个sheet的任务号集合，但是排除掉那些填充颜色为红色的任务，因为红色的任务是该sheet页和前一个sheet页比较以后新增加的任务，不是其本身的任务
-    last_one_task_ids = {task_id for task_id, row in last_one_task_map_row.items() if row[0].fill is None or row[0].fill.start_color.value != '00E0324C'}
+    last_one_task_ids = {task_id for task_id, row in last_one_task_map_row.items() if
+                         row[0].fill is None or row[0].fill.start_color.value != '00E0324C'}
     # 获取倒数第二sheet的任务号集合，但是排除掉那些填充颜色为红色的任务，因为红色的任务是该sheet页和前一个sheet页比较以后新增加的任务，不是其本身的任务
-    last_two_task_ids = {task_id for task_id, row in last_two_task_map_row.items() if row[0].fill is None or row[0].fill.start_color.value != '00E0324C'}
+    last_two_task_ids = {task_id for task_id, row in last_two_task_map_row.items() if
+                         row[0].fill is None or row[0].fill.start_color.value != '00E0324C'}
     # 获取 last_one_task_ids 中有的，但是last_two_task_ids中没有的任务，即新增加的任务
     increased_task_ids = last_one_task_ids - last_two_task_ids
     print("increased_task_ids: ", increased_task_ids)
@@ -328,7 +388,32 @@ def link_num_change_marker(last_one, last_two):
             max_row_num += 1
 
 
-func_change_markers = [globals()[name] for name in globals() if name.endswith('_change_marker') and name != 'func_change_markers']
+@change_markers
+def binlog_clean_change_marker(last_one, last_two):
+    """
+    检查链路是否因为binlog清理导致失败 purged
+    :param last_one:
+    :param last_two:
+    :return:
+    """
+    for row in last_one_task_map_row.values():
+        if row[0].fill is not None and row[0].fill.start_color.value == '00E0324C':
+            # 填充颜色为红色的任务是该sheet页和前一个sheet页比较以后新增加的任务，不是其本身的任务，不需要检查
+            continue
+
+        if row[2].value.strip().upper() != 'FAILED':
+            # 状态不是fail的跳过
+            continue
+
+        # 取出trace列的值
+        trace_data = row[11].value
+        if trace_data is None:
+            # trace列的值为空跳过
+            continue
+
+        # 如果trace列的值包含purged，则将链路名称列标记为浅红色
+        if 'purged' in trace_data:
+            row[1].fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
 
 
 def mark_link_change(wb):
@@ -358,5 +443,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
