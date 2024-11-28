@@ -2,6 +2,8 @@
 import os
 import re
 import sys
+import traceback
+
 from bs4 import BeautifulSoup
 import requests
 from concurrent.futures import ThreadPoolExecutor
@@ -9,12 +11,15 @@ import openpyxl
 from openpyxl.workbook import Workbook
 import pymysql.cursors
 import time
+from thread_safe_counter import ThreadSafeCounter
+import tkinter as tk
 
 """
 爬虫的方式从itsm获取vip信息
 """
 
-COOKIE_STR = 'JSESSIONID=dboFhBThvQ2UtmXhSkKA7vEG.itsmprdapp208; experimentation_subject_id=IjFjYjNlNTYzLWRiZTAtNDM3ZC05MzFlLTk4OGY3MjZkYmI1MSI%3D--642f87fac21ad96137b0ca2b46f781df1d1781bf; tradeMA=68; idsLoginUserIdLastTime=20013921; route=037ffa392b986cb6b73b7afb4792e5e2; SN_SESSION_ID=a6a43a18-e657-4a2e-ab3d-1ab6b98d7574; isso_ld=true; isso_us=20013921; scm-prd=siC07E171F39F366D7AD3261D61FEAE5EA; custno=20013921; _snma=1%7C170702760811448759%7C1707027608114%7C1708581444417%7C1708584359850%7C7%7C4; _snmp=17085843597737784; _snmb=170858435985351870%7C1708584359863%7C1708584359854%7C1; _snvd=1708581338362qBSqLmb+EpD; secureToken=C4CC3AC061BB215FB7DE014850E1E3B0; authId=si0BE28BF74BA18D5169B3C08ABC583A06'
+COOKIE_STR = ''
+cookies = ''
 URL_GET_TASK_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getTaskInfoByKind'
 URL_GET_TPS_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getTpsInfo'
 URL_GET_CONFIG_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getConfigInfo'
@@ -23,6 +28,9 @@ LINK_TYPE = "-INC-"
 PAGE_SIZE = 100
 EXCEL_FILE = 'D:\\file\\202402\\vip_info.xlsx'
 URL_GET_IP_INFO = 'http://itsm.cnsuning.com/traffic-web-in/api/getServerByIpInfo.htm'
+# 创建一个线程安全的原子计数器
+counter = ThreadSafeCounter()
+total = 0
 
 
 def cookie_to_dict():
@@ -37,7 +45,6 @@ def cookie_to_dict():
     return cookie_dict
 
 
-cookies = cookie_to_dict()
 link_page_data_param = {
     'taskNo': '',
     'kind': LINK_TYPE,
@@ -71,6 +78,8 @@ def get_page_link_data(page, size):
     data = result.get('data')
     if data is None or len(data) == 0:
         return None
+    # 将data中状态为未分配的链路过滤掉
+    data = list(filter(lambda x: x.get('taskStatus') != 'UNASSIGNED', data))
     total = result.get('total')
     size = result.get('size')
     return data, total, size
@@ -340,37 +349,40 @@ def get_vip_info_0(link_info):
     :param link_info: 链路信息
     :return:
     """
-    task_name = str(link_info.get('taskName')).strip()
+    try:
+        task_name = str(link_info.get('taskName')).strip()
 
-    # 发起GET请求获取页面内容
-    vip = get_vip_from_task_name(task_name)
-    link_info['vip'] = vip
-    # 查询内网ip基本信息
-    suc, ip_info = query_ip_info(task_name, vip)
-    if not suc:
-        print(f"{task_name} 查询vip信息失败: {ip_info}\n", end='')
-        link_info['vip_info'] = [{'vip': vip, 'err_msg': ip_info}]
-        return
-    # 状态: 未使用 使用中 保留
-    statue = ip_info.get('status')
-    if statue != '使用中':
-        link_info['vip_info'] = [{'vip': vip, 'err_msg': statue}]
-        return
-    # 使用类型: 高可用VIP 服务器Server
-    use_type = ip_info.get('useType')
-    deviceCodeUrl = ip_info.get('deviceCodeUrl')
-    # 存放最终解析到的vip信息
-    if use_type == '服务器Server':
-        #  服务器Server的处理
-        link_info['vip_info'] = []
-        parse_server_page(link_info, deviceCodeUrl)
-    elif use_type == '高可用VIP':
-        # mysql高可用vip的处理
-        link_info['vip_info'] = []
-        parse_mysql_ha_page(link_info, deviceCodeUrl)
-    else:
-        link_info['vip_info'] = [{'vip': vip, 'err_msg': f'不合法的使用类型: {use_type}'}]
-    print(f"{task_name} vip信息获取成功 {link_info['vip_info']} \n", end='')
+        # 发起GET请求获取页面内容
+        vip = get_vip_from_task_name(task_name)
+        link_info['vip'] = vip
+        # 查询内网ip基本信息
+        suc, ip_info = query_ip_info(task_name, vip)
+        if not suc:
+            print(f"{task_name} 查询vip信息失败: {ip_info}\n", end='')
+            link_info['vip_info'] = [{'vip': vip, 'err_msg': ip_info}]
+            return
+        # 状态: 未使用 使用中 保留
+        statue = ip_info.get('status')
+        if statue != '使用中':
+            link_info['vip_info'] = [{'vip': vip, 'err_msg': statue}]
+            return
+        # 使用类型: 高可用VIP 服务器Server
+        use_type = ip_info.get('useType')
+        deviceCodeUrl = ip_info.get('deviceCodeUrl')
+        # 存放最终解析到的vip信息
+        if use_type == '服务器Server':
+            #  服务器Server的处理
+            link_info['vip_info'] = []
+            parse_server_page(link_info, deviceCodeUrl)
+        elif use_type == '高可用VIP':
+            # mysql高可用vip的处理
+            link_info['vip_info'] = []
+            parse_mysql_ha_page(link_info, deviceCodeUrl)
+        else:
+            link_info['vip_info'] = [{'vip': vip, 'err_msg': f'不合法的使用类型: {use_type}'}]
+        print(f"{counter.increment()}/{total}    {task_name} vip信息获取成功 {link_info['vip_info']} \n", end='')
+    except:
+        traceback.print_exc()
 
 
 def set_vip_info(link_list):
@@ -421,6 +433,7 @@ def save_database(link_list):
     保存到数据库
     :return:
     """
+    print('开始保存到数据库: ')
     # 连接到MySQL数据库
     conn = pymysql.connect(
         host="10.237.217.107",
@@ -437,6 +450,8 @@ def save_database(link_list):
     cursor.execute(truncate_sql)
 
     insert_sql = "INSERT INTO vip_from_itsm (vip, ip, role, sys_en, sys_cn, bk_ip, err_msg) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+    total_num = len(link_list)
+    insert_num = 0
     for link_dict in link_list:
         vip_info = link_dict.get('vip_info')
         if vip_info is None:
@@ -445,6 +460,8 @@ def save_database(link_list):
             cursor.execute(insert_sql, (
                 vip.get('vip'), vip.get('ip'), vip.get('role'), vip.get('sys_en'), vip.get('sys_cn'), vip.get('bk_ip'),
                 vip.get('err_msg')))
+            insert_num += 1
+            print(f"{insert_num}/{total_num} {vip.get('vip')} 插入成功")
     conn.commit()
 
     # 关闭游标和数据库连接
@@ -452,13 +469,77 @@ def save_database(link_list):
     conn.close()
 
 
-all_link = get_link_list()
-if len(all_link) == 0:
-    print('链路数据为空')
-    sys.exit()
-print('vip数量: {}'.format(len(all_link)))
-print('开始获取vip信息...')
-set_vip_info(all_link)
-# save_excel(all_link)
-save_database(all_link)
-print('vip信息获取完成')
+def cookies_from_cmd():
+    """
+    从命令行参数中获取cookie
+    :return:
+    """
+    global COOKIE_STR
+    if len(sys.argv) < 2:
+        print('缺少cookie参数')
+        sys.exit()
+    # 将 sys.argv[1:] 中的所有参数拼接成字符串，赋值给 COOKIE_STR
+    COOKIE_STR = ''.join(sys.argv[1:])
+    if COOKIE_STR is None or COOKIE_STR == '':
+        print('cookie为空')
+        sys.exit()
+
+    global cookies
+    cookies = cookie_to_dict()
+
+
+def get_cookie_from_gui():
+    # 创建一个Tkinter根窗口
+    root = tk.Tk()
+    root.title("itsm cookie")
+    root.geometry("800x400")  # 设置窗口大小
+
+    # 在窗口中添加一个Label
+    label = tk.Label(root, text="输入itsm cookie(要通过验证码以后的cookie):")
+    label.pack(pady=10)
+
+    # 添加一个具有自定义高度和宽度的多行输入框
+    text = tk.Text(root, height=20, width=70)  # 设置高度为5行，宽度为40字符
+    text.pack(pady=10)
+
+    # 添加一个按钮
+    button = tk.Button(root, text="提交", command=lambda: submit(text.get("1.0", tk.END), root))
+    button.pack(pady=10)
+
+    # 显示窗口
+    root.mainloop()
+
+
+def submit(value, root):
+    global COOKIE_STR
+    COOKIE_STR = value.strip()
+    if COOKIE_STR is None or COOKIE_STR == '':
+        print('cookie为空')
+        sys.exit()
+    global cookies
+    cookies = cookie_to_dict()
+
+    root.destroy()  # 关闭窗口
+
+
+def main():
+    get_cookie_from_gui()
+
+    # 获取所有链路
+    all_link = get_link_list()
+    if len(all_link) == 0:
+        print('链路数据为空')
+        sys.exit()
+    print('vip数量: {}'.format(len(all_link)))
+    global total
+    total = len(all_link)
+
+    print('开始获取vip信息...')
+    set_vip_info(all_link)
+    # save_excel(all_link)
+    save_database(all_link)
+    print('vip信息获取完成')
+
+
+if __name__ == '__main__':
+    main()

@@ -14,14 +14,14 @@ from openpyxl.styles import PatternFill, GradientFill
 from openpyxl.styles import Font
 from openpyxl.styles import Border, Side
 
-COOKIE_STR = 'experimentation_subject_id=IjFjYjNlNTYzLWRiZTAtNDM3ZC05MzFlLTk4OGY3MjZkYmI1MSI%3D--642f87fac21ad96137b0ca2b46f781df1d1781bf; tradeMA=68; idsLoginUserIdLastTime=20013921; isso_ld=true; isso_us=20013921; scm-prd=siC07E171F39F366D7AD3261D61FEAE5EA; custno=20013921; _snsr=direct%7Cdirect%7C%7C%7C; _snma=1%7C170702760811448759%7C1707027608114%7C1708581444417%7C1708584359850%7C7%7C4; _snmp=17085843597737784; _snmb=170858435985351870%7C1708584359863%7C1708584359854%7C1; _snvd=1708581338362qBSqLmb+EpD; authId=si3EE8A2727386B47BC635253281D4B00F; secureToken=B271F4268E9D3A72E716E82E70143DCD; JSESSIONID=qwl902mfftca1ih0xlxoo7mm4'
+COOKIE_STR = 'experimentation_subject_id=IjFjYjNlNTYzLWRiZTAtNDM3ZC05MzFlLTk4OGY3MjZkYmI1MSI%3D--642f87fac21ad96137b0ca2b46f781df1d1781bf; tradeMA=68; isso_ld=true; isso_us=20013921; _snvd=1713755857159d4IKBYY9P4d; idsLoginUserIdLastTime=18093240; _snma=1%7C170702760811448759%7C1707027608114%7C1713756932265%7C1713834791201%7C18%7C12; authId=si4E54751845294FC865F3241DE8608A0C; secureToken=9554BF1478CE8098FAEA0D1FF9D10EE4; JSESSIONID=zz8d0bonbodj1uk865pdlpzeb'
 URL_GET_TASK_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getTaskInfoByKind'
 URL_GET_TPS_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getTpsInfo'
 URL_GET_CONFIG_INFO = 'http://rdrsmgr2.cnsuning.com/mgr/taskInfo/getConfigInfo'
 # -INC-  -SINK-
 LINK_TYPE = "-INC-"
 PAGE_SIZE = 100
-EXCEL_FILE = 'D:\\file\\202402\\rdrs_links_consistency.xlsx'
+EXCEL_FILE = 'D:\\file\\202404\\rdrs_links_consistency.xlsx'
 # 用于存储标记变化的函数
 func_change_markers = []
 
